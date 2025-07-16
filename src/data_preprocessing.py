@@ -1,97 +1,127 @@
-import numpy as np
-import pandas as pd     
-
 import os
-
 import re
+import logging
+from typing import Any
+import numpy as np
+import pandas as pd
 import nltk
-import string
 from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer, WordNetLemmatizer
-from sklearn.feature_extraction.text import CountVectorizer
+from nltk.stem import WordNetLemmatizer
 
-# fetch the data from data/raw directory
-train_data = pd.read_csv('./data/raw/train.csv')
-test_data = pd.read_csv('./data/raw/test.csv')
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
 
-# transform the text data
+def download_nltk_resources() -> None:
+    """Download required NLTK resources."""
+    try:
+        nltk.download('wordnet')
+        nltk.download('stopwords')
+        logging.info("NLTK resources downloaded successfully.")
+    except Exception as e:
+        logging.error(f"Error downloading NLTK resources: {e}")
+        raise
 
-# Download required NLTK resources for lemmatization and stopwords
-nltk.download('wordnet')
-nltk.download('stopwords')
+def load_data(file_path: str) -> pd.DataFrame:
+    """Load data from a CSV file."""
+    try:
+        df = pd.read_csv(file_path)
+        logging.info(f"Data loaded from {file_path}")
+        return df
+    except Exception as e:
+        logging.error(f"Error loading data from {file_path}: {e}")
+        raise
 
-# Lemmatize each word in the input text
-def lemmatization(text):
+def lemmatization(text: str) -> str:
+    """Lemmatize each word in the input text."""
     lemmatizer = WordNetLemmatizer()
-    text = text.split()  # Split text into words
-    text = [lemmatizer.lemmatize(y) for y in text]  # Lemmatize each word
-    return " ".join(text)  # Join words back into a string
+    words = text.split()
+    lemmatized = [lemmatizer.lemmatize(word) for word in words]
+    return " ".join(lemmatized)
 
-# Remove English stopwords from the input text
-def remove_stop_words(text):
+def remove_stop_words(text: str) -> str:
+    """Remove English stopwords from the input text."""
     stop_words = set(stopwords.words("english"))
-    Text = [i for i in str(text).split() if i not in stop_words]  # Filter out stopwords
-    return " ".join(Text)
+    filtered = [word for word in str(text).split() if word not in stop_words]
+    return " ".join(filtered)
 
-# Remove all numeric characters from the input text
-def removing_numbers(text):
-    text = ''.join([i for i in text if not i.isdigit()])
-    return text
+def removing_numbers(text: str) -> str:
+    """Remove all numeric characters from the input text."""
+    return ''.join([char for char in text if not char.isdigit()])
 
-# Convert all words in the input text to lowercase
-def lower_case(text):
-    text = text.split()
-    text = [y.lower() for y in text]
-    return " ".join(text)
+def lower_case(text: str) -> str:
+    """Convert all words in the input text to lowercase."""
+    return " ".join([word.lower() for word in text.split()])
 
-# Remove punctuation and extra whitespace from the input text
-def removing_punctuations(text):
-    # Remove specified punctuation characters
+def removing_punctuations(text: str) -> str:
+    """Remove punctuation and extra whitespace from the input text."""
     text = re.sub('[%s]' % re.escape("""!"#$%&'()*+,،-./:;<=>؟?@[\]^_`{|}~"""), ' ', text)
-    text = text.replace('؛', "", )
-    # Remove extra whitespace
+    text = text.replace('؛', "")
     text = re.sub('\s+', ' ', text)
-    text = " ".join(text.split())
-    return text.strip()
+    return " ".join(text.split()).strip()
 
-# Remove URLs from the input text
-def removing_urls(text):
+def removing_urls(text: str) -> str:
+    """Remove URLs from the input text."""
     url_pattern = re.compile(r'https?://\S+|www\.\S+')
     return url_pattern.sub(r'', text)
 
-# Replace sentences with less than 3 words in the DataFrame with NaN
-def remove_small_sentences(df):
-    for i in range(len(df)):
-        if len(df.text.iloc[i].split()) < 3:
-            df.text.iloc[i] = np.nan
+def remove_small_sentences(df: pd.DataFrame, min_words: int = 3) -> pd.DataFrame:
+    """Replace sentences with less than min_words in the DataFrame with NaN."""
+    try:
+        mask = df['content'].apply(lambda x: len(str(x).split()) < min_words)
+        df.loc[mask, 'content'] = np.nan
+        logging.info(f"Small sentences (less than {min_words} words) replaced with NaN.")
+        return df
+    except Exception as e:
+        logging.error(f"Error removing small sentences: {e}")
+        raise
 
-# Apply all normalization steps to the 'content' column of a DataFrame
-def normalize_text(df):
-    df.content = df.content.apply(lambda content: lower_case(content))
-    df.content = df.content.apply(lambda content: remove_stop_words(content))
-    df.content = df.content.apply(lambda content: removing_numbers(content))
-    df.content = df.content.apply(lambda content: removing_punctuations(content))
-    df.content = df.content.apply(lambda content: removing_urls(content))
-    df.content = df.content.apply(lambda content: lemmatization(content))
-    return df
+def normalize_text(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply all normalization steps to the 'content' column of a DataFrame."""
+    try:
+        df['content'] = df['content'].astype(str)
+        df['content'] = df['content'].apply(lower_case)
+        df['content'] = df['content'].apply(remove_stop_words)
+        df['content'] = df['content'].apply(removing_numbers)
+        df['content'] = df['content'].apply(removing_punctuations)
+        df['content'] = df['content'].apply(removing_urls)
+        df['content'] = df['content'].apply(lemmatization)
+        logging.info("Text normalization completed.")
+        return df
+    except Exception as e:
+        logging.error(f"Error during text normalization: {e}")
+        raise
 
-# Apply all normalization steps to a single sentence
-def normalized_sentence(sentence):
-    sentence = lower_case(sentence)
-    sentence = remove_stop_words(sentence)
-    sentence = removing_numbers(sentence)
-    sentence = removing_punctuations(sentence)
-    sentence = removing_urls(sentence)
-    sentence = lemmatization(sentence)
-    return
+def save_data(df: pd.DataFrame, file_path: str) -> None:
+    """Save DataFrame to a CSV file."""
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        df.to_csv(file_path, index=False)
+        logging.info(f"Data saved to {file_path}")
+    except Exception as e:
+        logging.error(f"Error saving data to {file_path}: {e}")
+        raise
 
-# Apply normalization to the training and testing data
-train_processed_data = normalize_text(train_data)
-test_processed_data = normalize_text(test_data)
+def main() -> None:
+    try:
+        download_nltk_resources()
+        train_data = load_data('./data/raw/train.csv')
+        test_data = load_data('./data/raw/test.csv')
 
-# Save the normalized training and testing data to CSV files
-data_path = os.path.join("data", "processed")
-os.makedirs(data_path, exist_ok=True)       
+        train_data = normalize_text(train_data)
+        test_data = normalize_text(test_data)
 
-train_processed_data.to_csv(os.path.join(data_path, "train_processed.csv"), index=False)
-test_processed_data.to_csv(os.path.join(data_path, "test_processed.csv"), index=False)
+        train_data = remove_small_sentences(train_data)
+        test_data = remove_small_sentences(test_data)
+
+        save_data(train_data, os.path.join("data", "processed", "train_processed.csv"))
+        save_data(test_data, os.path.join("data", "processed", "test_processed.csv"))
+        logging.info("Data preprocessing pipeline completed successfully.")
+    except Exception as e:
+        logging.critical(f"Data preprocessing pipeline failed: {e}")
+
+if __name__ == "__main__":
+    main()
